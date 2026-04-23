@@ -1,0 +1,141 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-server
+  namespace: default
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - www.njwjxy.cn
+      secretName: ingress-tls
+  rules:
+    - host: www.njwjxy.cn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-server
+                port:
+                  number: 5000
+          - path: /api/qwen-tts
+            pathType: Prefix
+            backend:
+              service:
+                name: tts-server
+                port:
+                  number: 3000
+          - path: /medicine-images
+            pathType: Prefix
+            backend:
+              service:
+                name: my-minio
+                port:
+                  number: 9000
+          - path: /cat-litter
+            pathType: Prefix
+            backend:
+              service:
+                name: my-minio
+                port:
+                  number: 9000
+          - path: /cat-video
+            pathType: Prefix
+            backend:
+              service:
+                name: my-minio
+                port:
+                  number: 9000
+          - path: /maosha-shiyong
+            pathType: Prefix
+            backend:
+              service:
+                name: my-minio
+                port:
+                  number: 9000
+          - path: /yangsheng
+            pathType: Prefix
+            backend:
+              service:
+                name: my-minio
+                port:
+                  number: 9000
+          - path: /api/add_recycle
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/get_recycles
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/get_recycle
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/update_state
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/recycle_summary
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/recycle_by_unit
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/maoning_maosha
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/maoning_maoshashiyong
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/assets
+            pathType: Prefix
+            backend:
+              service:
+                name: maoning-api-proxy
+                port:
+                  number: 5000
+          - path: /api/yangsheng/yangshengshiping
+            pathType: Prefix
+            backend:
+              service:
+                name: yangsheng-yangshengshiping-server
+                port:
+                  number: 5000
+          - path: /api/yangsheng/yaoshanbao
+            pathType: Prefix
+            backend:
+              service:
+                name: yangsheng-yaoshanbao-server
+                port:
+                  number: 5000
