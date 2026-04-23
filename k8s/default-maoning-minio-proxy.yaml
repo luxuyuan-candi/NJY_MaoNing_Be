@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: maoning-minio-proxy
+  namespace: default
+spec:
+  type: ExternalName
+  externalName: minio.maoning.svc.cluster.local
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000

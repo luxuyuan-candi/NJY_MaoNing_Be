@@ -19,6 +19,8 @@ gunicorn --bind 0.0.0.0:5000 app:app
 - `k8s/persistent-volumes.yaml` 为 `local-storage` 集群补齐 Maoning 所需 PV
 - `k8s/default-maoning-api-proxy.yaml` 在 `default` namespace 创建公网入口代理 Service
 - `k8s/default-backend-server-ingress.yaml` 恢复原有老接口路由，并新增 `/maoning` 前缀给新的独立后端
+- `k8s/default-maoning-minio-proxy.yaml` 在 `default` namespace 创建 maoning MinIO 代理 Service
+- `k8s/default-maoning-minio-public-ingress.yaml` 通过 `www.njwjxy.cn` 将 `/maoning-public-assets` 直连到 maoning MinIO
 
 `k8s/api.yaml` 现改为只使用开源镜像：
 
@@ -31,4 +33,4 @@ gunicorn --bind 0.0.0.0:5000 app:app
 
 - API 外部入口：`http://<node-ip>:30900`
 - Console 外部入口：`http://<node-ip>:30901`
-- 小程序内静态资源推荐通过 `https://www.njwjxy.cn:30443/maoning/api/assets/...` 访问
+- 小程序内静态资源推荐通过 `https://www.njwjxy.cn:30443/maoning-public-assets/...` 访问
