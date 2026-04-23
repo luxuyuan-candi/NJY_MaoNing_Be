@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: maoning-mysql-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /mnt/local-hostpath/maoning-mysql
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: maoning-minio-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /mnt/local-hostpath/maoning-minio
+    type: DirectoryOrCreate
