@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maoning-minio-public
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - www.njwjxy.cn
+      secretName: ingress-tls
+  rules:
+    - host: www.njwjxy.cn
+      http:
+        paths:
+          - path: /maoning-public-assets(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: maoning-minio-proxy
+                port:
+                  number: 9000
