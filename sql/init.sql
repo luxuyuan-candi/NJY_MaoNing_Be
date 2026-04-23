@@ -1,0 +1,41 @@
+CREATE DATABASE IF NOT EXISTS maoning CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE maoning;
+
+CREATE TABLE IF NOT EXISTS recycle_records (
+  id INT NOT NULL AUTO_INCREMENT,
+  unit VARCHAR(128) NOT NULL,
+  contact VARCHAR(64) NOT NULL,
+  date DATE NOT NULL,
+  location VARCHAR(255) NOT NULL,
+  weight DECIMAL(10, 2) NOT NULL,
+  herbs VARCHAR(255) DEFAULT '',
+  type ENUM('company', 'person') NOT NULL DEFAULT 'company',
+  state ENUM('pending', 'finish') NOT NULL DEFAULT 'pending',
+  approved_weight DECIMAL(10, 2) DEFAULT NULL,
+  batch_no VARCHAR(64) DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id INT NOT NULL AUTO_INCREMENT,
+  image_key VARCHAR(255) DEFAULT NULL,
+  erweiimage_key VARCHAR(255) DEFAULT NULL,
+  ywymimage_key VARCHAR(255) DEFAULT NULL,
+  spec VARCHAR(128) NOT NULL,
+  price VARCHAR(64) NOT NULL,
+  location VARCHAR(255) NOT NULL,
+  phone VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS maosha_shiyong (
+  id INT NOT NULL AUTO_INCREMENT,
+  image_key VARCHAR(255) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  phone VARCHAR(64) NOT NULL,
+  status ENUM('pending', 'approve') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+);

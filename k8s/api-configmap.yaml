@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: maoning-api-config
+  namespace: maoning
+data:
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_DATABASE: maoning
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_BUCKET_MAOSHA: cat-litter
+  MINIO_BUCKET_SHIYONG: maosha-shiyong
