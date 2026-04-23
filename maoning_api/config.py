@@ -13,3 +13,4 @@ class Config:
     MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "")
     MINIO_BUCKET_MAOSHA = os.getenv("MINIO_BUCKET_MAOSHA", "cat-litter")
     MINIO_BUCKET_SHIYONG = os.getenv("MINIO_BUCKET_SHIYONG", "maosha-shiyong")
+    MINIO_BUCKET_PUBLIC = os.getenv("MINIO_BUCKET_PUBLIC", "public-assets")

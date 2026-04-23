@@ -24,3 +24,11 @@ gunicorn --bind 0.0.0.0:5000 app:app
 
 - `alpine/git` 作为 initContainer 拉取当前 GitHub 仓库代码
 - `python:3.11-slim` 作为运行容器安装依赖并启动 Flask/Gunicorn
+
+## MinIO
+
+新的独立小程序对象存储使用 `maoning` namespace 下的 MinIO：
+
+- API 外部入口：`http://<node-ip>:30900`
+- Console 外部入口：`http://<node-ip>:30901`
+- 小程序内静态资源推荐通过 `https://www.njwjxy.cn:30443/maoning/api/assets/...` 访问

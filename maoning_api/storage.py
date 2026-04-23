@@ -16,7 +16,11 @@ def create_s3_client(config):
 
 def ensure_buckets(config):
     client = create_s3_client(config)
-    for bucket in [config["MINIO_BUCKET_MAOSHA"], config["MINIO_BUCKET_SHIYONG"]]:
+    for bucket in [
+        config["MINIO_BUCKET_MAOSHA"],
+        config["MINIO_BUCKET_SHIYONG"],
+        config["MINIO_BUCKET_PUBLIC"],
+    ]:
         try:
             client.head_bucket(Bucket=bucket)
         except ClientError:
