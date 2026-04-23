@@ -66,59 +66,59 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/get_recycles
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/get_recycle
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/update_state
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/recycle_summary
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/recycle_by_unit
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-yaozha-server
                 port:
                   number: 5000
           - path: /api/maoning_maosha
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-maosha-server
                 port:
                   number: 5000
           - path: /api/maoning_maoshashiyong
             pathType: Prefix
             backend:
               service:
-                name: maoning-api-proxy
+                name: maoning-maoshashiyong-server
                 port:
                   number: 5000
-          - path: /api/assets
+          - path: /maoning
             pathType: Prefix
             backend:
               service:
