@@ -11,3 +11,4 @@ data:
   MINIO_ENDPOINT: http://minio:9000
   MINIO_BUCKET_MAOSHA: cat-litter
   MINIO_BUCKET_SHIYONG: maosha-shiyong
+  MINIO_BUCKET_PUBLIC: public-assets

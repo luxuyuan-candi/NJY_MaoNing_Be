@@ -17,6 +17,7 @@ def register_routes(app):
     bucket_map = {
         "maosha": app.config["MINIO_BUCKET_MAOSHA"],
         "maoshashiyong": app.config["MINIO_BUCKET_SHIYONG"],
+        "public": app.config["MINIO_BUCKET_PUBLIC"],
     }
 
     def asset_path(bucket_alias, object_name):

@@ -9,7 +9,7 @@ from .storage import ensure_buckets
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
     ensure_buckets(app.config)
     register_routes(app)
