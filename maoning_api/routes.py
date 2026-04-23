@@ -5,6 +5,15 @@ from .storage import fetch_object, upload_image
 
 
 def register_routes(app):
+    def route(rule, **options):
+        def decorator(func):
+            endpoint = options.pop("endpoint", None)
+            app.route(rule, endpoint=endpoint, **options)(func)
+            prefixed_endpoint = f"{endpoint or func.__name__}_maoning"
+            app.route(f"/maoning{rule}", endpoint=prefixed_endpoint, **options)(func)
+            return func
+        return decorator
+
     bucket_map = {
         "maosha": app.config["MINIO_BUCKET_MAOSHA"],
         "maoshashiyong": app.config["MINIO_BUCKET_SHIYONG"],
@@ -15,11 +24,11 @@ def register_routes(app):
             return None
         return f"/api/assets/{bucket_alias}/{object_name}"
 
-    @app.get("/healthz")
+    @route("/healthz", methods=["GET"])
     def healthz():
         return jsonify({"success": True})
 
-    @app.post("/api/add_recycle")
+    @route("/api/add_recycle", methods=["POST"])
     def add_recycle():
         data = request.get_json(silent=True) or {}
         unit = data.get("unit")
@@ -52,7 +61,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/get_recycles")
+    @route("/api/get_recycles", methods=["GET"])
     def get_recycles():
         type_filter = request.args.get("type")
         conn = get_connection(app.config, dict_cursor=True)
@@ -80,7 +89,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/get_recycle")
+    @route("/api/get_recycle", methods=["GET"])
     def get_recycle():
         recycle_id = request.args.get("id")
         conn = get_connection(app.config, dict_cursor=True)
@@ -94,7 +103,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.post("/api/update_state")
+    @route("/api/update_state", methods=["POST"])
     def update_state():
         data = request.get_json(silent=True) or {}
         recycle_id = data.get("id")
@@ -148,7 +157,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/recycle_summary")
+    @route("/api/recycle_summary", methods=["GET"])
     def recycle_summary():
         type_filter = request.args.get("type")
         conn = get_connection(app.config, dict_cursor=True)
@@ -174,7 +183,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/recycle_by_unit")
+    @route("/api/recycle_by_unit", methods=["GET"])
     def recycle_by_unit():
         unit = request.args.get("unit")
         location = request.args.get("location")
@@ -217,7 +226,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/maoning_maosha/products")
+    @route("/api/maoning_maosha/products", methods=["GET"])
     def list_maosha_products():
         conn = get_connection(app.config, dict_cursor=True)
         try:
@@ -243,7 +252,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.post("/api/maoning_maosha/upload")
+    @route("/api/maoning_maosha/upload", methods=["POST"])
     def upload_maosha():
         upload_id = request.form.get("uploadId")
         image = request.files.get("image")
@@ -298,7 +307,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/maoning_maoshashiyong/products")
+    @route("/api/maoning_maoshashiyong/products", methods=["GET"])
     def list_maoshashiyong_products():
         conn = get_connection(app.config, dict_cursor=True)
         try:
@@ -320,7 +329,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.post("/api/maoning_maoshashiyong/upload")
+    @route("/api/maoning_maoshashiyong/upload", methods=["POST"])
     def upload_maoshashiyong():
         image = request.files.get("image")
         name = request.form.get("name")
@@ -347,7 +356,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/maoning_maoshashiyong/product")
+    @route("/api/maoning_maoshashiyong/product", methods=["GET"])
     def get_maoshashiyong_product():
         product_id = request.args.get("id")
         conn = get_connection(app.config, dict_cursor=True)
@@ -369,7 +378,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.post("/api/maoning_maoshashiyong/update")
+    @route("/api/maoning_maoshashiyong/update", methods=["POST"])
     def update_maoshashiyong():
         data = request.get_json(silent=True) or {}
         product_id = data.get("id")
@@ -396,7 +405,7 @@ def register_routes(app):
         finally:
             conn.close()
 
-    @app.get("/api/assets/<bucket_alias>/<path:object_name>")
+    @route("/api/assets/<bucket_alias>/<path:object_name>", methods=["GET"])
     def get_asset(bucket_alias, object_name):
         bucket = bucket_map.get(bucket_alias)
         if not bucket:

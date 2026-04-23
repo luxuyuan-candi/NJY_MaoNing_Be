@@ -18,7 +18,7 @@ gunicorn --bind 0.0.0.0:5000 app:app
 - `k8s/ingress.yaml` 通过集群现有 `nginx` ingress 暴露服务
 - `k8s/persistent-volumes.yaml` 为 `local-storage` 集群补齐 Maoning 所需 PV
 - `k8s/default-maoning-api-proxy.yaml` 在 `default` namespace 创建公网入口代理 Service
-- `k8s/default-backend-server-ingress.yaml` 复用 `default` namespace 的 `www.njwjxy.cn` 与 `ingress-tls`
+- `k8s/default-backend-server-ingress.yaml` 恢复原有老接口路由，并新增 `/maoning` 前缀给新的独立后端
 
 `k8s/api.yaml` 现改为只使用开源镜像：
 
