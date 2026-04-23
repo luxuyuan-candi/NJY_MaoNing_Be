@@ -20,4 +20,7 @@ gunicorn --bind 0.0.0.0:5000 app:app
 - `k8s/default-maoning-api-proxy.yaml` 在 `default` namespace 创建公网入口代理 Service
 - `k8s/default-backend-server-ingress.yaml` 复用 `default` namespace 的 `www.njwjxy.cn` 与 `ingress-tls`
 
-`k8s/api.yaml` 默认使用 `maoning-api:latest` 镜像，部署前需要在当前环境可访问的容器运行时中准备该镜像。
+`k8s/api.yaml` 现改为只使用开源镜像：
+
+- `alpine/git` 作为 initContainer 拉取当前 GitHub 仓库代码
+- `python:3.11-slim` 作为运行容器安装依赖并启动 Flask/Gunicorn
