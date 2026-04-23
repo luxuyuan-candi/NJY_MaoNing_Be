@@ -4,13 +4,11 @@ metadata:
   name: maoning-api
   namespace: maoning
 spec:
-  type: NodePort
   selector:
     app: maoning-api
   ports:
     - port: 5000
       targetPort: 5000
-      nodePort: 30500
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,10 +25,33 @@ spec:
       labels:
         app: maoning-api
     spec:
+      volumes:
+        - name: app-code
+          emptyDir: {}
+      initContainers:
+        - name: fetch-source
+          image: alpine/git:2.47.2
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              rm -rf /workspace/*
+              git clone --depth=1 https://github.com/luxuyuan-candi/NJY_MaoNing_Be.git /workspace
+          volumeMounts:
+            - name: app-code
+              mountPath: /workspace
       containers:
         - name: maoning-api
-          image: maoning-api:latest
+          image: python:3.11-slim
           imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              pip install --no-cache-dir -r /workspace/requirements.txt && \
+              cd /workspace && \
+              gunicorn --bind 0.0.0.0:5000 app:app
           ports:
             - containerPort: 5000
           envFrom:
@@ -64,3 +85,6 @@ spec:
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 20
+          volumeMounts:
+            - name: app-code
+              mountPath: /workspace
