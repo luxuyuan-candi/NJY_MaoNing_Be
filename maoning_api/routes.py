@@ -5,6 +5,11 @@ from .storage import fetch_object, upload_image
 
 
 def register_routes(app):
+    def clean_text(value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
     def route(rule, **options):
         def decorator(func):
             endpoint = options.pop("endpoint", None)
@@ -32,18 +37,21 @@ def register_routes(app):
     @route("/api/add_recycle", methods=["POST"])
     def add_recycle():
         data = request.get_json(silent=True) or {}
-        unit = data.get("unit")
-        contact = data.get("contact")
-        date = data.get("date")
-        location = data.get("location")
+        unit = clean_text(data.get("unit"))
+        contact = clean_text(data.get("contact"))
+        date = clean_text(data.get("date"))
+        location = clean_text(data.get("location"))
         weight = data.get("weight")
         herbs = data.get("herbs") or []
-        type_ = data.get("type", "company")
+        type_ = clean_text(data.get("type", "company")) or "company"
+
+        if type_ not in ["company", "person"]:
+            return jsonify({"success": False, "msg": "非法类型"}), 400
 
         if not all([unit, contact, date, location, weight]):
             return jsonify({"success": False, "msg": "缺少必要字段"}), 400
 
-        herbs_str = ",".join(herbs)
+        herbs_str = ",".join(clean_text(herb) for herb in herbs if clean_text(herb))
         conn = get_connection(app.config)
         try:
             with conn.cursor() as cursor:
@@ -177,17 +185,32 @@ def register_routes(app):
                 if type_filter in ["company", "person"]:
                     sql += " AND type = %s"
                     params.append(type_filter)
-                sql += " GROUP BY unit, location, type"
+                sql += " GROUP BY unit, location, type ORDER BY unit ASC, location ASC"
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
-            return jsonify({"success": True, "data": json_ready(rows)})
+            return jsonify(
+                {
+                    "success": True,
+                    "data": [
+                        {
+                            **json_ready(row),
+                            "entity_key": f"{row['name']}::{row['address']}",
+                        }
+                        for row in rows
+                    ],
+                }
+            )
         finally:
             conn.close()
 
     @route("/api/recycle_by_unit", methods=["GET"])
     def recycle_by_unit():
-        unit = request.args.get("unit")
-        location = request.args.get("location")
+        unit = clean_text(request.args.get("unit"))
+        location = clean_text(request.args.get("location"))
+
+        if not unit or not location:
+            return jsonify({"success": False, "msg": "缺少名称或地址"}), 400
+
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
@@ -205,22 +228,24 @@ def register_routes(app):
 
                 cursor.execute(
                     """
-                    SELECT location, SUM(COALESCE(approved_weight, weight)) AS total
+                    SELECT unit AS name, location, SUM(COALESCE(approved_weight, weight)) AS total
                     FROM recycle_records
                     WHERE state = 'finish' AND unit = %s AND location = %s
-                    GROUP BY location
+                    GROUP BY unit, location
                     """,
                     (unit, location),
                 )
-                meta = cursor.fetchone() or {"location": location, "total": 0}
+                meta = cursor.fetchone() or {"name": unit, "location": location, "total": 0}
 
             return jsonify(
                 {
                     "success": True,
                     "data": {
                         "records": json_ready(records),
+                        "name": meta["name"],
                         "location": meta["location"],
                         "total": json_ready(meta["total"]),
+                        "entity_key": f"{meta['name']}::{meta['location']}",
                     },
                 }
             )
