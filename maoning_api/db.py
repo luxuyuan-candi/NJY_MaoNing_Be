@@ -6,6 +6,25 @@ from pymysql.cursors import DictCursor
 
 SCHEMA_STATEMENTS = [
     """
+    CREATE TABLE IF NOT EXISTS recycle_records (
+      id INT NOT NULL AUTO_INCREMENT,
+      user_openid VARCHAR(64) DEFAULT NULL,
+      unit VARCHAR(128) NOT NULL,
+      contact VARCHAR(64) NOT NULL,
+      date DATE NOT NULL,
+      location VARCHAR(255) NOT NULL,
+      weight DECIMAL(10, 2) NOT NULL,
+      herbs VARCHAR(255) DEFAULT '',
+      type ENUM('company', 'person') NOT NULL DEFAULT 'company',
+      state ENUM('pending', 'finish') NOT NULL DEFAULT 'pending',
+      approved_weight DECIMAL(10, 2) DEFAULT NULL,
+      batch_no VARCHAR(64) DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_recycle_user_openid (user_openid)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS user_profiles (
       openid VARCHAR(64) NOT NULL,
       nickname VARCHAR(128) NOT NULL DEFAULT '微信用户',
@@ -30,7 +49,6 @@ SCHEMA_STATEMENTS = [
     )
     """,
 ]
-
 
 def get_connection(config, dict_cursor=False):
     connect_kwargs = {
@@ -63,6 +81,22 @@ def ensure_tables(config):
         with conn.cursor() as cursor:
             for statement in SCHEMA_STATEMENTS:
                 cursor.execute(statement)
+            cursor.execute("SHOW COLUMNS FROM recycle_records LIKE 'user_openid'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE recycle_records
+                    ADD COLUMN user_openid VARCHAR(64) DEFAULT NULL AFTER id
+                    """
+                )
+            cursor.execute("SHOW INDEX FROM recycle_records WHERE Key_name = 'idx_recycle_user_openid'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE recycle_records
+                    ADD KEY idx_recycle_user_openid (user_openid)
+                    """
+                )
         conn.commit()
     finally:
         conn.close()

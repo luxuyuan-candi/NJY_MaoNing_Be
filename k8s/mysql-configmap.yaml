@@ -9,6 +9,7 @@ data:
     USE maoning;
     CREATE TABLE IF NOT EXISTS recycle_records (
       id INT NOT NULL AUTO_INCREMENT,
+      user_openid VARCHAR(64) DEFAULT NULL,
       unit VARCHAR(128) NOT NULL,
       contact VARCHAR(64) NOT NULL,
       date DATE NOT NULL,
@@ -20,7 +21,8 @@ data:
       approved_weight DECIMAL(10, 2) DEFAULT NULL,
       batch_no VARCHAR(64) DEFAULT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id)
+      PRIMARY KEY (id),
+      KEY idx_recycle_user_openid (user_openid)
     );
     CREATE TABLE IF NOT EXISTS products (
       id INT NOT NULL AUTO_INCREMENT,

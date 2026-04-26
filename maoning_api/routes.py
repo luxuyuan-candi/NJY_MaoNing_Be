@@ -48,6 +48,13 @@ def register_routes(app):
             return None, (jsonify({"success": False, "msg": "无权限"}), 403)
         return user, None
 
+    def can_access_recycle(user, record):
+        if not user or not record:
+            return False
+        if user["user_type"] == "管理员":
+            return True
+        return clean_text(record.get("user_openid")) == user["openid"]
+
     def format_profile(row):
         if not row:
             return None
@@ -297,6 +304,10 @@ def register_routes(app):
 
     @route("/api/add_recycle", methods=["POST"])
     def add_recycle():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         data = request.get_json(silent=True) or {}
         unit = clean_text(data.get("unit"))
         contact = clean_text(data.get("contact"))
@@ -318,10 +329,10 @@ def register_routes(app):
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO recycle_records(unit, contact, date, location, weight, herbs, type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO recycle_records(user_openid, unit, contact, date, location, weight, herbs, type)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (unit, contact, date, location, weight, herbs_str, type_),
+                    (user["openid"], unit, contact, date, location, weight, herbs_str, type_),
                 )
             conn.commit()
             return jsonify({"success": True})
@@ -333,6 +344,10 @@ def register_routes(app):
 
     @route("/api/get_recycles", methods=["GET"])
     def get_recycles():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         type_filter = request.args.get("type")
         conn = get_connection(app.config, dict_cursor=True)
         try:
@@ -342,9 +357,15 @@ def register_routes(app):
                     FROM recycle_records
                 """
                 params = []
+                where_clauses = []
+                if user["user_type"] != "管理员":
+                    where_clauses.append("user_openid = %s")
+                    params.append(user["openid"])
                 if type_filter in ["company", "person"]:
-                    sql += " WHERE type = %s"
+                    where_clauses.append("type = %s")
                     params.append(type_filter)
+                if where_clauses:
+                    sql += " WHERE " + " AND ".join(where_clauses)
                 sql += " ORDER BY created_at DESC"
                 cursor.execute(sql, params)
                 records = cursor.fetchall()
@@ -361,20 +382,30 @@ def register_routes(app):
 
     @route("/api/get_recycle", methods=["GET"])
     def get_recycle():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         recycle_id = request.args.get("id")
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT * FROM recycle_records WHERE id = %s", (recycle_id,))
                 row = cursor.fetchone()
-            if row:
+            if row and can_access_recycle(user, row):
                 return jsonify({"success": True, "data": json_ready(row)})
+            if row:
+                return jsonify({"success": False, "msg": "无权限"}), 403
             return jsonify({"success": False, "msg": "未找到记录"}), 404
         finally:
             conn.close()
 
     @route("/api/update_state", methods=["POST"])
     def update_state():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
         data = request.get_json(silent=True) or {}
         recycle_id = data.get("id")
         new_state = data.get("state")
@@ -429,6 +460,10 @@ def register_routes(app):
 
     @route("/api/recycle_summary", methods=["GET"])
     def recycle_summary():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
         type_filter = request.args.get("type")
         conn = get_connection(app.config, dict_cursor=True)
         try:
@@ -466,6 +501,10 @@ def register_routes(app):
 
     @route("/api/recycle_by_unit", methods=["GET"])
     def recycle_by_unit():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
         unit = clean_text(request.args.get("unit"))
         location = clean_text(request.args.get("location"))
 
