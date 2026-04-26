@@ -12,3 +12,4 @@ data:
   MINIO_BUCKET_MAOSHA: cat-litter
   MINIO_BUCKET_SHIYONG: maosha-shiyong
   MINIO_BUCKET_PUBLIC: public-assets
+  WECHAT_APP_ID: wx4e2c5e940b617eee
