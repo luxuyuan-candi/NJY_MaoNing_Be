@@ -38,10 +38,12 @@ def ensure_bucket_exists(config, bucket):
         client.create_bucket(Bucket=bucket)
 
 
-def upload_image(config, bucket, file_storage):
+def upload_image(config, bucket, file_storage, object_prefix=""):
     ensure_bucket_exists(config, bucket)
     extension = file_storage.filename.rsplit(".", 1)[-1].lower() if "." in file_storage.filename else "jpg"
     object_name = f"{uuid.uuid4()}.{extension}"
+    if object_prefix:
+        object_name = f"{object_prefix.rstrip('/')}/{object_name}"
     file_storage.stream.seek(0)
     create_s3_client(config).upload_fileobj(
         file_storage.stream,

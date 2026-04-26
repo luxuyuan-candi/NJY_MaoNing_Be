@@ -78,6 +78,11 @@ spec:
                 secretKeyRef:
                   name: maoning-secret
                   key: MINIO_SECRET_KEY
+            - name: WECHAT_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: maoning-secret
+                  key: WECHAT_APP_SECRET
           readinessProbe:
             httpGet:
               path: /healthz

@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 
 from .config import Config
+from .db import ensure_tables
 from .routes import register_routes
 from .storage import ensure_buckets
 
@@ -12,5 +13,6 @@ def create_app():
     CORS(app, resources={r"/*": {"origins": "*"}})
 
     ensure_buckets(app.config)
+    ensure_tables(app.config)
     register_routes(app)
     return app

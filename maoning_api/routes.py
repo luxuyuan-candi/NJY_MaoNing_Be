@@ -1,3 +1,6 @@
+import json
+from urllib import error, parse, request as urllib_request
+
 from flask import jsonify, request, send_file
 
 from .db import get_connection, json_ready
@@ -9,6 +12,52 @@ def register_routes(app):
         if value is None:
             return ""
         return str(value).strip()
+
+    def current_openid():
+        return clean_text(request.headers.get("X-User-Openid"))
+
+    def get_user_by_openid(openid):
+        if not openid:
+            return None
+        conn = get_connection(app.config, dict_cursor=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM user_profiles WHERE openid = %s", (openid,))
+                return cursor.fetchone()
+        finally:
+            conn.close()
+
+    def has_admin_user(cursor):
+        cursor.execute("SELECT 1 FROM user_profiles WHERE user_type = '管理员' LIMIT 1")
+        return cursor.fetchone() is not None
+
+    def require_user():
+        openid = current_openid()
+        if not openid:
+            return None, (jsonify({"success": False, "msg": "未登录"}), 401)
+        user = get_user_by_openid(openid)
+        if not user:
+            return None, (jsonify({"success": False, "msg": "用户不存在"}), 404)
+        return user, None
+
+    def require_admin():
+        user, error_response = require_user()
+        if error_response:
+            return None, error_response
+        if user["user_type"] != "管理员":
+            return None, (jsonify({"success": False, "msg": "无权限"}), 403)
+        return user, None
+
+    def format_profile(row):
+        if not row:
+            return None
+        return {
+            "openid": row["openid"],
+            "nickname": row["nickname"],
+            "email": row["email"],
+            "avatar": asset_path("public", row["avatar_key"]) if row.get("avatar_key") else "",
+            "userType": row["user_type"],
+        }
 
     def route(rule, **options):
         def decorator(func):
@@ -33,6 +82,218 @@ def register_routes(app):
     @route("/healthz", methods=["GET"])
     def healthz():
         return jsonify({"success": True})
+
+    @route("/api/auth/wechat-login", methods=["POST"])
+    def wechat_login():
+        data = request.get_json(silent=True) or {}
+        code = clean_text(data.get("code"))
+
+        if not code:
+            return jsonify({"success": False, "msg": "缺少登录 code"}), 400
+        if not app.config["WECHAT_APP_ID"] or not app.config["WECHAT_APP_SECRET"]:
+            return jsonify({"success": False, "msg": "微信登录未配置"}), 500
+
+        query = parse.urlencode(
+            {
+                "appid": app.config["WECHAT_APP_ID"],
+                "secret": app.config["WECHAT_APP_SECRET"],
+                "js_code": code,
+                "grant_type": "authorization_code",
+            }
+        )
+        url = f"https://api.weixin.qq.com/sns/jscode2session?{query}"
+
+        try:
+            with urllib_request.urlopen(url, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except error.URLError:
+            return jsonify({"success": False, "msg": "微信服务请求失败"}), 502
+
+        openid = clean_text(payload.get("openid"))
+        if not openid:
+            return jsonify({"success": False, "msg": payload.get("errmsg") or "微信登录失败"}), 400
+
+        conn = get_connection(app.config)
+        try:
+            with conn.cursor() as cursor:
+                bootstrap_admin = not has_admin_user(cursor)
+                cursor.execute(
+                    """
+                    INSERT INTO user_profiles (openid, user_type)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE openid = VALUES(openid)
+                    """,
+                    (openid, "管理员" if bootstrap_admin else "普通用户"),
+                )
+                if bootstrap_admin:
+                    cursor.execute(
+                        "UPDATE user_profiles SET user_type = '管理员' WHERE openid = %s",
+                        (openid,),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({"success": True, "data": format_profile(get_user_by_openid(openid))})
+
+    @route("/api/profile", methods=["GET"])
+    def get_profile():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+        return jsonify({"success": True, "data": format_profile(user)})
+
+    @route("/api/profile", methods=["PUT"])
+    def update_profile():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
+        data = request.get_json(silent=True) or {}
+        nickname = clean_text(data.get("nickname")) or user["nickname"] or "微信用户"
+        email = clean_text(data.get("email"))
+        avatar_key = clean_text(data.get("avatarKey")) or user.get("avatar_key")
+
+        conn = get_connection(app.config)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE user_profiles
+                    SET nickname = %s, email = %s, avatar_key = %s
+                    WHERE openid = %s
+                    """,
+                    (nickname, email, avatar_key or None, user["openid"]),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({"success": True, "data": format_profile(get_user_by_openid(user["openid"]))})
+
+    @route("/api/profile/avatar", methods=["POST"])
+    def upload_profile_avatar():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
+        avatar = request.files.get("avatar")
+        if not avatar:
+            return jsonify({"success": False, "msg": "缺少头像文件"}), 400
+
+        object_key = upload_image(
+            app.config,
+            bucket_map["public"],
+            avatar,
+            object_prefix="profile-avatar",
+        )
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "avatarKey": object_key,
+                    "avatar": asset_path("public", object_key),
+                },
+            }
+        )
+
+    @route("/api/feedbacks", methods=["POST"])
+    def create_feedback():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
+        data = request.get_json(silent=True) or {}
+        content = clean_text(data.get("content"))
+        if not content:
+            return jsonify({"success": False, "msg": "缺少反馈内容"}), 400
+
+        conn = get_connection(app.config)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO user_feedbacks (user_openid, nickname_snapshot, email_snapshot, content)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (user["openid"], user["nickname"], user["email"], content),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({"success": True})
+
+    @route("/api/feedbacks", methods=["GET"])
+    def list_feedbacks():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
+        conn = get_connection(app.config, dict_cursor=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, user_openid, nickname_snapshot, email_snapshot, content, created_at
+                    FROM user_feedbacks
+                    ORDER BY created_at DESC
+                    """
+                )
+                rows = cursor.fetchall()
+            return jsonify({"success": True, "data": json_ready(rows)})
+        finally:
+            conn.close()
+
+    @route("/api/users", methods=["GET"])
+    def list_users():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
+        conn = get_connection(app.config, dict_cursor=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT openid, nickname, email, avatar_key, user_type, created_at, updated_at
+                    FROM user_profiles
+                    ORDER BY updated_at DESC, created_at DESC
+                    """
+                )
+                rows = cursor.fetchall()
+            return jsonify(
+                {
+                    "success": True,
+                    "data": [format_profile(row) for row in rows],
+                }
+            )
+        finally:
+            conn.close()
+
+    @route("/api/users/<openid>/user-type", methods=["PUT"])
+    def update_user_type(openid):
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
+        data = request.get_json(silent=True) or {}
+        user_type = clean_text(data.get("userType"))
+        if user_type not in ["普通用户", "管理员"]:
+            return jsonify({"success": False, "msg": "非法用户类型"}), 400
+
+        conn = get_connection(app.config)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE user_profiles SET user_type = %s WHERE openid = %s",
+                    (user_type, openid),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({"success": True, "data": format_profile(get_user_by_openid(openid))})
 
     @route("/api/add_recycle", methods=["POST"])
     def add_recycle():

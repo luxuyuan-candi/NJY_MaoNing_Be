@@ -14,3 +14,6 @@ class Config:
     MINIO_BUCKET_MAOSHA = os.getenv("MINIO_BUCKET_MAOSHA", "cat-litter")
     MINIO_BUCKET_SHIYONG = os.getenv("MINIO_BUCKET_SHIYONG", "maosha-shiyong")
     MINIO_BUCKET_PUBLIC = os.getenv("MINIO_BUCKET_PUBLIC", "public-assets")
+
+    WECHAT_APP_ID = os.getenv("WECHAT_APP_ID", "")
+    WECHAT_APP_SECRET = os.getenv("WECHAT_APP_SECRET", "")
