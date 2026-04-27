@@ -55,6 +55,13 @@ def register_routes(app):
             return True
         return clean_text(record.get("user_openid")) == user["openid"]
 
+    def can_access_trial(user, record):
+        if not user or not record:
+            return False
+        if user["user_type"] == "管理员":
+            return True
+        return clean_text(record.get("user_openid")) == user["openid"]
+
     def format_profile(row):
         if not row:
             return None
@@ -635,10 +642,20 @@ def register_routes(app):
 
     @route("/api/maoning_maoshashiyong/products", methods=["GET"])
     def list_maoshashiyong_products():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM maosha_shiyong ORDER BY id DESC")
+                if user["user_type"] == "管理员":
+                    cursor.execute("SELECT * FROM maosha_shiyong ORDER BY id DESC")
+                else:
+                    cursor.execute(
+                        "SELECT * FROM maosha_shiyong WHERE user_openid = %s ORDER BY id DESC",
+                        (user["openid"],),
+                    )
                 rows = cursor.fetchall()
             return jsonify(
                 [
@@ -657,6 +674,10 @@ def register_routes(app):
 
     @route("/api/maoning_maoshashiyong/upload", methods=["POST"])
     def upload_maoshashiyong():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         image = request.files.get("image")
         name = request.form.get("name")
         phone = request.form.get("phone")
@@ -669,10 +690,10 @@ def register_routes(app):
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO maosha_shiyong (image_key, name, phone)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO maosha_shiyong (user_openid, image_key, name, phone)
+                    VALUES (%s, %s, %s, %s)
                     """,
-                    (upload_image(app.config, bucket_map["maoshashiyong"], image), name, phone),
+                    (user["openid"], upload_image(app.config, bucket_map["maoshashiyong"], image), name, phone),
                 )
             conn.commit()
             return jsonify({"msg": "success"})
@@ -684,6 +705,10 @@ def register_routes(app):
 
     @route("/api/maoning_maoshashiyong/product", methods=["GET"])
     def get_maoshashiyong_product():
+        user, error_response = require_user()
+        if error_response:
+            return error_response
+
         product_id = request.args.get("id")
         conn = get_connection(app.config, dict_cursor=True)
         try:
@@ -692,6 +717,8 @@ def register_routes(app):
                 row = cursor.fetchone()
             if not row:
                 return jsonify({"success": False, "msg": "未找到记录"}), 404
+            if not can_access_trial(user, row):
+                return jsonify({"success": False, "msg": "无权限"}), 403
             return jsonify(
                 {
                     "id": row["id"],
@@ -706,6 +733,10 @@ def register_routes(app):
 
     @route("/api/maoning_maoshashiyong/update", methods=["POST"])
     def update_maoshashiyong():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
         data = request.get_json(silent=True) or {}
         product_id = data.get("id")
         state = data.get("state")
