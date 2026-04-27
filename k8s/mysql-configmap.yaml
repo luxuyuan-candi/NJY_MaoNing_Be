@@ -38,12 +38,14 @@ data:
     );
     CREATE TABLE IF NOT EXISTS maosha_shiyong (
       id INT NOT NULL AUTO_INCREMENT,
+      user_openid VARCHAR(64) DEFAULT NULL,
       image_key VARCHAR(255) NOT NULL,
       name VARCHAR(128) NOT NULL,
       phone VARCHAR(64) NOT NULL,
       status ENUM('pending', 'approve') NOT NULL DEFAULT 'pending',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id)
+      PRIMARY KEY (id),
+      KEY idx_maosha_shiyong_user_openid (user_openid)
     );
     CREATE TABLE IF NOT EXISTS user_profiles (
       openid VARCHAR(64) NOT NULL,

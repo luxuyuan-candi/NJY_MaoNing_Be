@@ -48,6 +48,19 @@ SCHEMA_STATEMENTS = [
       KEY idx_feedback_user_openid (user_openid)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS maosha_shiyong (
+      id INT NOT NULL AUTO_INCREMENT,
+      user_openid VARCHAR(64) DEFAULT NULL,
+      image_key VARCHAR(255) NOT NULL,
+      name VARCHAR(128) NOT NULL,
+      phone VARCHAR(64) NOT NULL,
+      status ENUM('pending', 'approve') NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_maosha_shiyong_user_openid (user_openid)
+    )
+    """,
 ]
 
 def get_connection(config, dict_cursor=False):
@@ -95,6 +108,22 @@ def ensure_tables(config):
                     """
                     ALTER TABLE recycle_records
                     ADD KEY idx_recycle_user_openid (user_openid)
+                    """
+                )
+            cursor.execute("SHOW COLUMNS FROM maosha_shiyong LIKE 'user_openid'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE maosha_shiyong
+                    ADD COLUMN user_openid VARCHAR(64) DEFAULT NULL AFTER id
+                    """
+                )
+            cursor.execute("SHOW INDEX FROM maosha_shiyong WHERE Key_name = 'idx_maosha_shiyong_user_openid'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE maosha_shiyong
+                    ADD KEY idx_maosha_shiyong_user_openid (user_openid)
                     """
                 )
         conn.commit()
