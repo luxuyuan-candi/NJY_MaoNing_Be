@@ -9,10 +9,24 @@ from .storage import fetch_object, upload_image
 
 
 def register_routes(app):
+    feedback_categories = [
+        "功能异常",
+        "页面体验",
+        "性能卡顿",
+        "账号登录",
+        "数据内容",
+        "反馈建议",
+        "其他问题",
+    ]
+
     def clean_text(value):
         if value is None:
             return ""
         return str(value).strip()
+
+    def normalize_feedback_category(value):
+        category = clean_text(value)
+        return category if category in feedback_categories else "其他问题"
 
     def analyze_feedback_sentiment_locally(content):
         text = clean_text(content).lower()
@@ -31,10 +45,34 @@ def register_routes(app):
         positive_score = sum(1 for word in positive_words if word in text)
         return "消极" if negative_score > positive_score else "积极"
 
+    def classify_feedback_locally(content):
+        text = clean_text(content).lower()
+        rules = [
+            ("账号登录", ("登录", "微信", "头像", "昵称", "邮箱", "用户", "权限", "管理员", "openid")),
+            ("性能卡顿", ("卡顿", "很慢", "太慢", "加载慢", "延迟", "timeout", "slow")),
+            ("功能异常", ("报错", "错误", "打不开", "不能", "无法", "失败", "闪退", "崩溃", "bug", "error", "fail")),
+            ("数据内容", ("数据", "记录", "列表", "统计", "乱码", "图片", "视频", "金额", "重量", "地址")),
+            ("页面体验", ("页面", "样式", "布局", "按钮", "显示", "看不到", "不美观", "字体", "图标")),
+            ("反馈建议", ("建议", "希望", "能不能", "可否", "增加", "优化", "改进")),
+        ]
+        for category, words in rules:
+            if any(word in text for word in words):
+                return category
+        return "其他问题"
+
+    def analyze_feedback_locally(content):
+        return {
+            "sentiment": analyze_feedback_sentiment_locally(content),
+            "problem_category": classify_feedback_locally(content),
+        }
+
     def analyze_feedback_sentiment(content):
+        return analyze_feedback(content)["sentiment"]
+
+    def analyze_feedback(content):
         api_key = clean_text(app.config.get("DEEPSEEK_API_KEY"))
         if not api_key:
-            return analyze_feedback_sentiment_locally(content)
+            return analyze_feedback_locally(content)
 
         api_base = clean_text(app.config.get("DEEPSEEK_API_BASE")) or "https://api.deepseek.com"
         model = clean_text(app.config.get("DEEPSEEK_MODEL")) or "deepseek-chat"
@@ -45,8 +83,10 @@ def register_routes(app):
                 {
                     "role": "system",
                     "content": (
-                        "你是用户反馈情感分类器。只判断反馈整体情感，"
-                        "只能返回两个词之一：积极 或 消极。不要输出解释。"
+                        "你是小程序用户反馈分析器。判断反馈整体情感和问题分类。"
+                        "情感只能是：积极、消极。"
+                        "问题分类只能是：功能异常、页面体验、性能卡顿、账号登录、数据内容、反馈建议、其他问题。"
+                        "只返回 JSON，例如 {\"sentiment\":\"消极\",\"problem_category\":\"功能异常\"}。"
                     ),
                 },
                 {
@@ -55,7 +95,7 @@ def register_routes(app):
                 },
             ],
             "temperature": 0,
-            "max_tokens": 4,
+            "max_tokens": 80,
             "stream": False,
         }
         req = urllib_request.Request(
@@ -73,23 +113,50 @@ def register_routes(app):
                 result = json.loads(response.read().decode("utf-8"))
             answer = clean_text(result["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError, ValueError, error.URLError):
-            return analyze_feedback_sentiment_locally(content)
+            return analyze_feedback_locally(content)
 
+        try:
+            parsed = json.loads(answer)
+        except ValueError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
         if "消极" in answer:
-            return "消极"
-        if "积极" in answer:
-            return "积极"
-        return analyze_feedback_sentiment_locally(content)
+            parsed["sentiment"] = "消极"
+        elif "积极" in answer:
+            parsed["sentiment"] = "积极"
+        for category in feedback_categories:
+            if category in answer:
+                parsed["problem_category"] = category
+                break
+
+        local_result = analyze_feedback_locally(content)
+        sentiment = clean_text(parsed.get("sentiment"))
+        if "消极" in answer:
+            sentiment = "消极"
+        elif "积极" in answer:
+            sentiment = "积极"
+        if sentiment not in ["积极", "消极"]:
+            sentiment = local_result["sentiment"]
+
+        return {
+            "sentiment": sentiment,
+            "problem_category": normalize_feedback_category(parsed.get("problem_category") or local_result["problem_category"]),
+        }
 
     def update_feedback_sentiment_async(feedback_id, content):
         def worker():
-            sentiment = analyze_feedback_sentiment(content)
+            analysis = analyze_feedback(content)
             conn = get_connection(app.config)
             try:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        "UPDATE user_feedbacks SET sentiment = %s WHERE id = %s",
-                        (sentiment, feedback_id),
+                        """
+                        UPDATE user_feedbacks
+                        SET sentiment = %s, problem_category = %s
+                        WHERE id = %s
+                        """,
+                        (analysis["sentiment"], analysis["problem_category"], feedback_id),
                     )
                 conn.commit()
             finally:
@@ -305,7 +372,7 @@ def register_routes(app):
         content = clean_text(data.get("content"))
         if not content:
             return jsonify({"success": False, "msg": "缺少反馈内容"}), 400
-        sentiment = analyze_feedback_sentiment_locally(content)
+        analysis = analyze_feedback_locally(content)
         feedback_id = None
 
         conn = get_connection(app.config)
@@ -313,10 +380,18 @@ def register_routes(app):
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO user_feedbacks (user_openid, nickname_snapshot, email_snapshot, content, sentiment)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO user_feedbacks
+                      (user_openid, nickname_snapshot, email_snapshot, content, sentiment, problem_category)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (user["openid"], user["nickname"], user["email"], content, sentiment),
+                    (
+                        user["openid"],
+                        user["nickname"],
+                        user["email"],
+                        content,
+                        analysis["sentiment"],
+                        analysis["problem_category"],
+                    ),
                 )
                 feedback_id = cursor.lastrowid
             conn.commit()
@@ -326,7 +401,7 @@ def register_routes(app):
         if feedback_id:
             update_feedback_sentiment_async(feedback_id, content)
 
-        return jsonify({"success": True, "data": {"sentiment": sentiment}})
+        return jsonify({"success": True, "data": analysis})
 
     @route("/api/feedbacks", methods=["GET"])
     def list_feedbacks():
@@ -339,9 +414,67 @@ def register_routes(app):
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT id, user_openid, nickname_snapshot, email_snapshot, content, sentiment, created_at
+                    SELECT
+                      id, user_openid, nickname_snapshot, email_snapshot, content,
+                      sentiment, problem_category, created_at
                     FROM user_feedbacks
                     ORDER BY created_at DESC
+                    """
+                )
+                rows = cursor.fetchall()
+            return jsonify({"success": True, "data": json_ready(rows)})
+        finally:
+            conn.close()
+
+    @route("/api/feedbacks/stats", methods=["GET"])
+    def feedback_stats():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
+        conn = get_connection(app.config, dict_cursor=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                      SUM(CASE WHEN sentiment = '积极' THEN 1 ELSE 0 END) AS positive,
+                      SUM(CASE WHEN sentiment = '消极' THEN 1 ELSE 0 END) AS negative,
+                      COUNT(*) AS total
+                    FROM user_feedbacks
+                    """
+                )
+                row = cursor.fetchone() or {}
+            return jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "positive": int(row.get("positive") or 0),
+                        "negative": int(row.get("negative") or 0),
+                        "total": int(row.get("total") or 0),
+                    },
+                }
+            )
+        finally:
+            conn.close()
+
+    @route("/api/feedbacks/negative-top5", methods=["GET"])
+    def negative_feedback_top5():
+        _, error_response = require_admin()
+        if error_response:
+            return error_response
+
+        conn = get_connection(app.config, dict_cursor=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT problem_category, COUNT(*) AS count
+                    FROM user_feedbacks
+                    WHERE sentiment = '消极'
+                    GROUP BY problem_category
+                    ORDER BY count DESC, problem_category ASC
+                    LIMIT 5
                     """
                 )
                 rows = cursor.fetchall()

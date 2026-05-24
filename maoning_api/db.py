@@ -44,6 +44,7 @@ SCHEMA_STATEMENTS = [
       email_snapshot VARCHAR(191) NOT NULL DEFAULT '',
       content TEXT NOT NULL,
       sentiment ENUM('积极', '消极') NOT NULL DEFAULT '积极',
+      problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_feedback_user_openid (user_openid)
@@ -133,6 +134,14 @@ def ensure_tables(config):
                     """
                     ALTER TABLE user_feedbacks
                     ADD COLUMN sentiment ENUM('积极', '消极') NOT NULL DEFAULT '积极' AFTER content
+                    """
+                )
+            cursor.execute("SHOW COLUMNS FROM user_feedbacks LIKE 'problem_category'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    ALTER TABLE user_feedbacks
+                    ADD COLUMN problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题' AFTER sentiment
                     """
                 )
         conn.commit()
