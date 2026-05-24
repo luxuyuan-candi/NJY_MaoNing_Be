@@ -1,4 +1,5 @@
 import json
+import threading
 from urllib import error, parse, request as urllib_request
 
 from flask import jsonify, request, send_file
@@ -68,7 +69,7 @@ def register_routes(app):
         )
 
         try:
-            with urllib_request.urlopen(req, timeout=10) as response:
+            with urllib_request.urlopen(req, timeout=5) as response:
                 result = json.loads(response.read().decode("utf-8"))
             answer = clean_text(result["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError, ValueError, error.URLError):
@@ -79,6 +80,22 @@ def register_routes(app):
         if "积极" in answer:
             return "积极"
         return analyze_feedback_sentiment_locally(content)
+
+    def update_feedback_sentiment_async(feedback_id, content):
+        def worker():
+            sentiment = analyze_feedback_sentiment(content)
+            conn = get_connection(app.config)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE user_feedbacks SET sentiment = %s WHERE id = %s",
+                        (sentiment, feedback_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def current_openid():
         return clean_text(request.headers.get("X-User-Openid"))
@@ -288,7 +305,8 @@ def register_routes(app):
         content = clean_text(data.get("content"))
         if not content:
             return jsonify({"success": False, "msg": "缺少反馈内容"}), 400
-        sentiment = analyze_feedback_sentiment(content)
+        sentiment = analyze_feedback_sentiment_locally(content)
+        feedback_id = None
 
         conn = get_connection(app.config)
         try:
@@ -300,9 +318,13 @@ def register_routes(app):
                     """,
                     (user["openid"], user["nickname"], user["email"], content, sentiment),
                 )
+                feedback_id = cursor.lastrowid
             conn.commit()
         finally:
             conn.close()
+
+        if feedback_id:
+            update_feedback_sentiment_async(feedback_id, content)
 
         return jsonify({"success": True, "data": {"sentiment": sentiment}})
 
