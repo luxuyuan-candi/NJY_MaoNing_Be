@@ -13,6 +13,23 @@ def register_routes(app):
             return ""
         return str(value).strip()
 
+    def analyze_feedback_sentiment(content):
+        text = clean_text(content).lower()
+        negative_words = (
+            "不好", "不能", "无法", "失败", "报错", "错误", "卡", "卡顿", "崩溃", "闪退",
+            "慢", "太慢", "麻烦", "难用", "不好用", "没有", "缺少", "不满意", "失望",
+            "差", "很差", "糟糕", "问题", "异常", "打不开", "不行", "投诉", "建议改",
+            "bug", "error", "fail", "failed", "slow", "crash", "problem",
+        )
+        positive_words = (
+            "好", "很好", "好用", "满意", "喜欢", "方便", "顺畅", "稳定", "清晰",
+            "漂亮", "美观", "不错", "可以", "感谢", "支持", "赞", "优秀", "完善",
+            "good", "great", "nice", "thanks", "thank", "excellent",
+        )
+        negative_score = sum(1 for word in negative_words if word in text)
+        positive_score = sum(1 for word in positive_words if word in text)
+        return "消极" if negative_score > positive_score else "积极"
+
     def current_openid():
         return clean_text(request.headers.get("X-User-Openid"))
 
@@ -221,22 +238,23 @@ def register_routes(app):
         content = clean_text(data.get("content"))
         if not content:
             return jsonify({"success": False, "msg": "缺少反馈内容"}), 400
+        sentiment = analyze_feedback_sentiment(content)
 
         conn = get_connection(app.config)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO user_feedbacks (user_openid, nickname_snapshot, email_snapshot, content)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO user_feedbacks (user_openid, nickname_snapshot, email_snapshot, content, sentiment)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (user["openid"], user["nickname"], user["email"], content),
+                    (user["openid"], user["nickname"], user["email"], content, sentiment),
                 )
             conn.commit()
         finally:
             conn.close()
 
-        return jsonify({"success": True})
+        return jsonify({"success": True, "data": {"sentiment": sentiment}})
 
     @route("/api/feedbacks", methods=["GET"])
     def list_feedbacks():
@@ -249,7 +267,7 @@ def register_routes(app):
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT id, user_openid, nickname_snapshot, email_snapshot, content, created_at
+                    SELECT id, user_openid, nickname_snapshot, email_snapshot, content, sentiment, created_at
                     FROM user_feedbacks
                     ORDER BY created_at DESC
                     """
