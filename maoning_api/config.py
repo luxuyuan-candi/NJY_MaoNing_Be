@@ -17,3 +17,7 @@ class Config:
 
     WECHAT_APP_ID = os.getenv("WECHAT_APP_ID", "")
     WECHAT_APP_SECRET = os.getenv("WECHAT_APP_SECRET", "")
+
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")

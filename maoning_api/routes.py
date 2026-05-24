@@ -13,7 +13,7 @@ def register_routes(app):
             return ""
         return str(value).strip()
 
-    def analyze_feedback_sentiment(content):
+    def analyze_feedback_sentiment_locally(content):
         text = clean_text(content).lower()
         negative_words = (
             "不好", "不能", "无法", "失败", "报错", "错误", "卡", "卡顿", "崩溃", "闪退",
@@ -29,6 +29,56 @@ def register_routes(app):
         negative_score = sum(1 for word in negative_words if word in text)
         positive_score = sum(1 for word in positive_words if word in text)
         return "消极" if negative_score > positive_score else "积极"
+
+    def analyze_feedback_sentiment(content):
+        api_key = clean_text(app.config.get("DEEPSEEK_API_KEY"))
+        if not api_key:
+            return analyze_feedback_sentiment_locally(content)
+
+        api_base = clean_text(app.config.get("DEEPSEEK_API_BASE")) or "https://api.deepseek.com"
+        model = clean_text(app.config.get("DEEPSEEK_MODEL")) or "deepseek-chat"
+        url = f"{api_base.rstrip('/')}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是用户反馈情感分类器。只判断反馈整体情感，"
+                        "只能返回两个词之一：积极 或 消极。不要输出解释。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": clean_text(content),
+                },
+            ],
+            "temperature": 0,
+            "max_tokens": 4,
+            "stream": False,
+        }
+        req = urllib_request.Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib_request.urlopen(req, timeout=10) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            answer = clean_text(result["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError, ValueError, error.URLError):
+            return analyze_feedback_sentiment_locally(content)
+
+        if "消极" in answer:
+            return "消极"
+        if "积极" in answer:
+            return "积极"
+        return analyze_feedback_sentiment_locally(content)
 
     def current_openid():
         return clean_text(request.headers.get("X-User-Openid"))

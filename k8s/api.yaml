@@ -83,6 +83,11 @@ spec:
                 secretKeyRef:
                   name: maoning-secret
                   key: WECHAT_APP_SECRET
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: maoning-secret
+                  key: DEEPSEEK_API_KEY
           readinessProbe:
             httpGet:
               path: /healthz
