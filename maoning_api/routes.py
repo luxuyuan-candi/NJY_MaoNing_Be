@@ -10,7 +10,7 @@ from .storage import fetch_object, upload_image
 
 
 def register_routes(app):
-    admin_user_types = ["管理员", "高级管理员", "超级管理员"]
+    admin_user_types = ["管理员", "超级管理员"]
     super_admin_user_type = "超级管理员"
     all_user_types = ["普通用户", *admin_user_types]
     feedback_categories = [
@@ -221,7 +221,7 @@ def register_routes(app):
             conn.close()
 
     def has_admin_user(cursor):
-        cursor.execute("SELECT 1 FROM user_profiles WHERE user_type IN ('管理员', '高级管理员', '超级管理员') LIMIT 1")
+        cursor.execute("SELECT 1 FROM user_profiles WHERE user_type IN ('管理员', '超级管理员') LIMIT 1")
         return cursor.fetchone() is not None
 
     def require_user():
@@ -554,7 +554,7 @@ def register_routes(app):
 
     @route("/api/users", methods=["GET"])
     def list_users():
-        _, error_response = require_super_admin()
+        _, error_response = require_admin()
         if error_response:
             return error_response
 

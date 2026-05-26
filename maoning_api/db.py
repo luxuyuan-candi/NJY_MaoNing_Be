@@ -49,7 +49,7 @@ SCHEMA_STATEMENTS = [
       nickname VARCHAR(128) NOT NULL DEFAULT '微信用户',
       email VARCHAR(191) NOT NULL DEFAULT '',
       avatar_key VARCHAR(255) DEFAULT NULL,
-      user_type ENUM('普通用户', '管理员', '高级管理员', '超级管理员') NOT NULL DEFAULT '普通用户',
+      user_type ENUM('普通用户', '管理员', '超级管理员') NOT NULL DEFAULT '普通用户',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (openid),
@@ -221,8 +221,15 @@ def ensure_tables(config):
                 )
             cursor.execute(
                 """
+                UPDATE user_profiles
+                SET user_type = '超级管理员'
+                WHERE user_type = '高级管理员'
+                """
+            )
+            cursor.execute(
+                """
                 ALTER TABLE user_profiles
-                MODIFY user_type ENUM('普通用户', '管理员', '高级管理员', '超级管理员')
+                MODIFY user_type ENUM('普通用户', '管理员', '超级管理员')
                 NOT NULL DEFAULT '普通用户'
                 """
             )
