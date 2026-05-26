@@ -22,7 +22,11 @@ data:
       batch_no VARCHAR(64) DEFAULT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_recycle_user_openid (user_openid)
+      KEY idx_recycle_user_openid (user_openid),
+      KEY idx_recycle_user_type_created (user_openid, type, created_at),
+      KEY idx_recycle_type_created (type, created_at),
+      KEY idx_recycle_state_type_unit_location (state, type, unit, location),
+      KEY idx_recycle_state_unit_location_date (state, unit, location, date)
     );
     CREATE TABLE IF NOT EXISTS products (
       id INT NOT NULL AUTO_INCREMENT,
@@ -45,7 +49,8 @@ data:
       status ENUM('pending', 'approve') NOT NULL DEFAULT 'pending',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_maosha_shiyong_user_openid (user_openid)
+      KEY idx_maosha_shiyong_user_openid (user_openid),
+      KEY idx_maosha_shiyong_user_id (user_openid, id)
     );
     CREATE TABLE IF NOT EXISTS user_profiles (
       openid VARCHAR(64) NOT NULL,
@@ -55,7 +60,9 @@ data:
       user_type ENUM('普通用户', '管理员') NOT NULL DEFAULT '普通用户',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (openid)
+      PRIMARY KEY (openid),
+      KEY idx_user_type (user_type),
+      KEY idx_user_updated_created (updated_at, created_at)
     );
     CREATE TABLE IF NOT EXISTS user_feedbacks (
       id BIGINT NOT NULL AUTO_INCREMENT,
@@ -67,5 +74,7 @@ data:
       problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_feedback_user_openid (user_openid)
+      KEY idx_feedback_user_openid (user_openid),
+      KEY idx_feedback_created (created_at),
+      KEY idx_feedback_sentiment_category (sentiment, problem_category)
     );

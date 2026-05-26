@@ -22,7 +22,25 @@ SCHEMA_STATEMENTS = [
       batch_no VARCHAR(64) DEFAULT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_recycle_user_openid (user_openid)
+      KEY idx_recycle_user_openid (user_openid),
+      KEY idx_recycle_user_type_created (user_openid, type, created_at),
+      KEY idx_recycle_type_created (type, created_at),
+      KEY idx_recycle_state_type_unit_location (state, type, unit, location),
+      KEY idx_recycle_state_unit_location_date (state, unit, location, date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS products (
+      id INT NOT NULL AUTO_INCREMENT,
+      image_key VARCHAR(255) DEFAULT NULL,
+      erweiimage_key VARCHAR(255) DEFAULT NULL,
+      ywymimage_key VARCHAR(255) DEFAULT NULL,
+      spec VARCHAR(128) NOT NULL,
+      price VARCHAR(64) NOT NULL,
+      location VARCHAR(255) NOT NULL,
+      phone VARCHAR(64) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
     )
     """,
     """
@@ -34,7 +52,9 @@ SCHEMA_STATEMENTS = [
       user_type ENUM('普通用户', '管理员') NOT NULL DEFAULT '普通用户',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (openid)
+      PRIMARY KEY (openid),
+      KEY idx_user_type (user_type),
+      KEY idx_user_updated_created (updated_at, created_at)
     )
     """,
     """
@@ -48,7 +68,9 @@ SCHEMA_STATEMENTS = [
       problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_feedback_user_openid (user_openid)
+      KEY idx_feedback_user_openid (user_openid),
+      KEY idx_feedback_created (created_at),
+      KEY idx_feedback_sentiment_category (sentiment, problem_category)
     )
     """,
     """
@@ -61,9 +83,59 @@ SCHEMA_STATEMENTS = [
       status ENUM('pending', 'approve') NOT NULL DEFAULT 'pending',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_maosha_shiyong_user_openid (user_openid)
+      KEY idx_maosha_shiyong_user_openid (user_openid),
+      KEY idx_maosha_shiyong_user_id (user_openid, id)
     )
     """,
+]
+
+
+INDEX_STATEMENTS = [
+    (
+        "recycle_records",
+        "idx_recycle_user_type_created",
+        "ALTER TABLE recycle_records ADD KEY idx_recycle_user_type_created (user_openid, type, created_at)",
+    ),
+    (
+        "recycle_records",
+        "idx_recycle_type_created",
+        "ALTER TABLE recycle_records ADD KEY idx_recycle_type_created (type, created_at)",
+    ),
+    (
+        "recycle_records",
+        "idx_recycle_state_type_unit_location",
+        "ALTER TABLE recycle_records ADD KEY idx_recycle_state_type_unit_location (state, type, unit, location)",
+    ),
+    (
+        "recycle_records",
+        "idx_recycle_state_unit_location_date",
+        "ALTER TABLE recycle_records ADD KEY idx_recycle_state_unit_location_date (state, unit, location, date)",
+    ),
+    (
+        "user_profiles",
+        "idx_user_type",
+        "ALTER TABLE user_profiles ADD KEY idx_user_type (user_type)",
+    ),
+    (
+        "user_profiles",
+        "idx_user_updated_created",
+        "ALTER TABLE user_profiles ADD KEY idx_user_updated_created (updated_at, created_at)",
+    ),
+    (
+        "user_feedbacks",
+        "idx_feedback_created",
+        "ALTER TABLE user_feedbacks ADD KEY idx_feedback_created (created_at)",
+    ),
+    (
+        "user_feedbacks",
+        "idx_feedback_sentiment_category",
+        "ALTER TABLE user_feedbacks ADD KEY idx_feedback_sentiment_category (sentiment, problem_category)",
+    ),
+    (
+        "maosha_shiyong",
+        "idx_maosha_shiyong_user_id",
+        "ALTER TABLE maosha_shiyong ADD KEY idx_maosha_shiyong_user_id (user_openid, id)",
+    ),
 ]
 
 def get_connection(config, dict_cursor=False):
@@ -147,6 +219,17 @@ def ensure_tables(config):
                     ADD COLUMN problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题' AFTER sentiment
                     """
                 )
+            for table_name, index_name, statement in INDEX_STATEMENTS:
+                cursor.execute(
+                    "SHOW INDEX FROM `{}` WHERE Key_name = %s".format(table_name),
+                    (index_name,),
+                )
+                if not cursor.fetchone():
+                    try:
+                        cursor.execute(statement)
+                    except pymysql.err.OperationalError as exc:
+                        if exc.args[0] != 1061:
+                            raise
         conn.commit()
     finally:
         conn.close()
