@@ -49,7 +49,7 @@ SCHEMA_STATEMENTS = [
       nickname VARCHAR(128) NOT NULL DEFAULT '微信用户',
       email VARCHAR(191) NOT NULL DEFAULT '',
       avatar_key VARCHAR(255) DEFAULT NULL,
-      user_type ENUM('普通用户', '管理员') NOT NULL DEFAULT '普通用户',
+      user_type ENUM('普通用户', '管理员', '高级管理员', '超级管理员') NOT NULL DEFAULT '普通用户',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (openid),
@@ -217,6 +217,24 @@ def ensure_tables(config):
                     """
                     ALTER TABLE user_feedbacks
                     ADD COLUMN problem_category VARCHAR(32) NOT NULL DEFAULT '其他问题' AFTER sentiment
+                    """
+                )
+            cursor.execute(
+                """
+                ALTER TABLE user_profiles
+                MODIFY user_type ENUM('普通用户', '管理员', '高级管理员', '超级管理员')
+                NOT NULL DEFAULT '普通用户'
+                """
+            )
+            cursor.execute("SELECT 1 FROM user_profiles WHERE user_type = '超级管理员' LIMIT 1")
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    UPDATE user_profiles
+                    SET user_type = '超级管理员'
+                    WHERE user_type = '管理员'
+                    ORDER BY created_at ASC
+                    LIMIT 1
                     """
                 )
             for table_name, index_name, statement in INDEX_STATEMENTS:

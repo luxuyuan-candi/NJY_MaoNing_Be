@@ -10,6 +10,9 @@ from .storage import fetch_object, upload_image
 
 
 def register_routes(app):
+    admin_user_types = ["管理员", "高级管理员", "超级管理员"]
+    super_admin_user_type = "超级管理员"
+    all_user_types = ["普通用户", *admin_user_types]
     feedback_categories = [
         "功能异常",
         "页面体验",
@@ -218,7 +221,7 @@ def register_routes(app):
             conn.close()
 
     def has_admin_user(cursor):
-        cursor.execute("SELECT 1 FROM user_profiles WHERE user_type = '管理员' LIMIT 1")
+        cursor.execute("SELECT 1 FROM user_profiles WHERE user_type IN ('管理员', '高级管理员', '超级管理员') LIMIT 1")
         return cursor.fetchone() is not None
 
     def require_user():
@@ -234,21 +237,29 @@ def register_routes(app):
         user, error_response = require_user()
         if error_response:
             return None, error_response
-        if user["user_type"] != "管理员":
+        if user["user_type"] not in admin_user_types:
             return None, (jsonify({"success": False, "msg": "无权限"}), 403)
+        return user, None
+
+    def require_super_admin():
+        user, error_response = require_user()
+        if error_response:
+            return None, error_response
+        if user["user_type"] != super_admin_user_type:
+            return None, (jsonify({"success": False, "msg": "仅超级管理员可配置用户权限"}), 403)
         return user, None
 
     def can_access_recycle(user, record):
         if not user or not record:
             return False
-        if user["user_type"] == "管理员":
+        if user["user_type"] in admin_user_types:
             return True
         return clean_text(record.get("user_openid")) == user["openid"]
 
     def can_access_trial(user, record):
         if not user or not record:
             return False
-        if user["user_type"] == "管理员":
+        if user["user_type"] in admin_user_types:
             return True
         return clean_text(record.get("user_openid")) == user["openid"]
 
@@ -327,12 +338,27 @@ def register_routes(app):
                     VALUES (%s, %s)
                     ON DUPLICATE KEY UPDATE openid = VALUES(openid)
                     """,
-                    (openid, "管理员" if bootstrap_admin else "普通用户"),
+                    (openid, super_admin_user_type if bootstrap_admin else "普通用户"),
                 )
                 if bootstrap_admin:
                     cursor.execute(
-                        "UPDATE user_profiles SET user_type = '管理员' WHERE openid = %s",
-                        (openid,),
+                        "UPDATE user_profiles SET user_type = %s WHERE openid = %s",
+                        (super_admin_user_type, openid),
+                    )
+                cursor.execute(
+                    "SELECT 1 FROM user_profiles WHERE user_type = %s LIMIT 1",
+                    (super_admin_user_type,),
+                )
+                if not cursor.fetchone():
+                    cursor.execute(
+                        """
+                        UPDATE user_profiles
+                        SET user_type = %s
+                        WHERE user_type = '管理员'
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        """,
+                        (super_admin_user_type,),
                     )
             conn.commit()
         finally:
@@ -528,7 +554,7 @@ def register_routes(app):
 
     @route("/api/users", methods=["GET"])
     def list_users():
-        _, error_response = require_admin()
+        _, error_response = require_super_admin()
         if error_response:
             return error_response
 
@@ -552,14 +578,16 @@ def register_routes(app):
 
     @route("/api/users/<openid>/user-type", methods=["PUT"])
     def update_user_type(openid):
-        _, error_response = require_admin()
+        operator, error_response = require_super_admin()
         if error_response:
             return error_response
 
         data = request.get_json(silent=True) or {}
         user_type = clean_text(data.get("userType"))
-        if user_type not in ["普通用户", "管理员"]:
+        if user_type not in all_user_types:
             return jsonify({"success": False, "msg": "非法用户类型"}), 400
+        if operator["openid"] == openid and user_type != super_admin_user_type:
+            return jsonify({"success": False, "msg": "不能降低自己的超级管理员权限"}), 400
 
         conn = get_connection(app.config)
         try:
@@ -635,7 +663,7 @@ def register_routes(app):
                     """
                     params = []
                     where_clauses = []
-                    if user["user_type"] != "管理员":
+                    if user["user_type"] not in admin_user_types:
                         where_clauses.append("user_openid = %s")
                         params.append(user["openid"])
                     if type_filter in ["company", "person"]:
@@ -935,7 +963,7 @@ def register_routes(app):
             conn = get_connection(app.config, dict_cursor=True)
             try:
                 with conn.cursor() as cursor:
-                    if user["user_type"] == "管理员":
+                    if user["user_type"] in admin_user_types:
                         cursor.execute("SELECT * FROM maosha_shiyong ORDER BY id DESC")
                     else:
                         cursor.execute(
