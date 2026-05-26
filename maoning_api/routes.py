@@ -4,6 +4,7 @@ from urllib import error, parse, request as urllib_request
 
 from flask import jsonify, request, send_file
 
+from .cache import delete_pattern, get_json, set_json
 from .db import get_connection, json_ready
 from .storage import fetch_object, upload_image
 
@@ -23,6 +24,29 @@ def register_routes(app):
         if value is None:
             return ""
         return str(value).strip()
+
+    def cache_key(*parts):
+        escaped = [parse.quote(clean_text(part), safe="") for part in parts]
+        return "maoning:" + ":".join(escaped)
+
+    def cached_response(key, ttl, loader, success_wrapper=True):
+        cached = get_json(app.config, key)
+        if cached is not None:
+            payload = {"success": True, "data": cached} if success_wrapper else cached
+            response = jsonify(payload)
+            response.headers["X-Cache"] = "HIT"
+            return response
+
+        data = json_ready(loader())
+        set_json(app.config, key, data, ttl)
+        payload = {"success": True, "data": data} if success_wrapper else data
+        response = jsonify(payload)
+        response.headers["X-Cache"] = "MISS"
+        return response
+
+    def invalidate_cache(*patterns):
+        for pattern in patterns:
+            delete_pattern(app.config, f"maoning:{pattern}")
 
     def normalize_feedback_category(value):
         category = clean_text(value)
@@ -161,6 +185,7 @@ def register_routes(app):
                 conn.commit()
             finally:
                 conn.close()
+            invalidate_cache("feedbacks:*")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -170,11 +195,25 @@ def register_routes(app):
     def get_user_by_openid(openid):
         if not openid:
             return None
+        key = cache_key("profile", openid)
+        cached = get_json(app.config, key)
+        if cached is not None:
+            return cached
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM user_profiles WHERE openid = %s", (openid,))
-                return cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT openid, nickname, email, avatar_key, user_type
+                    FROM user_profiles
+                    WHERE openid = %s
+                    """,
+                    (openid,),
+                )
+                row = cursor.fetchone()
+            if row:
+                set_json(app.config, key, json_ready(row), app.config["CACHE_DEFAULT_TTL"])
+            return row
         finally:
             conn.close()
 
@@ -299,6 +338,7 @@ def register_routes(app):
         finally:
             conn.close()
 
+        invalidate_cache(f"profile:{parse.quote(openid, safe='')}", "users:*")
         return jsonify({"success": True, "data": format_profile(get_user_by_openid(openid))})
 
     @route("/api/profile", methods=["GET"])
@@ -334,6 +374,7 @@ def register_routes(app):
         finally:
             conn.close()
 
+        invalidate_cache(f"profile:{parse.quote(user['openid'], safe='')}", "users:*")
         return jsonify({"success": True, "data": format_profile(get_user_by_openid(user["openid"]))})
 
     @route("/api/profile/avatar", methods=["POST"])
@@ -398,6 +439,7 @@ def register_routes(app):
         finally:
             conn.close()
 
+        invalidate_cache("feedbacks:*")
         if feedback_id:
             update_feedback_sentiment_async(feedback_id, content)
 
@@ -409,22 +451,24 @@ def register_routes(app):
         if error_response:
             return error_response
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      id, user_openid, nickname_snapshot, email_snapshot, content,
-                      sentiment, problem_category, created_at
-                    FROM user_feedbacks
-                    ORDER BY created_at DESC
-                    """
-                )
-                rows = cursor.fetchall()
-            return jsonify({"success": True, "data": json_ready(rows)})
-        finally:
-            conn.close()
+        def load_feedbacks():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT
+                          id, user_openid, nickname_snapshot, email_snapshot, content,
+                          sentiment, problem_category, created_at
+                        FROM user_feedbacks
+                        ORDER BY created_at DESC
+                        """
+                    )
+                    return cursor.fetchall()
+            finally:
+                conn.close()
+
+        return cached_response(cache_key("feedbacks", "list"), app.config["CACHE_SHORT_TTL"], load_feedbacks)
 
     @route("/api/feedbacks/stats", methods=["GET"])
     def feedback_stats():
@@ -432,31 +476,29 @@ def register_routes(app):
         if error_response:
             return error_response
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      SUM(CASE WHEN sentiment = '积极' THEN 1 ELSE 0 END) AS positive,
-                      SUM(CASE WHEN sentiment = '消极' THEN 1 ELSE 0 END) AS negative,
-                      COUNT(*) AS total
-                    FROM user_feedbacks
-                    """
-                )
-                row = cursor.fetchone() or {}
-            return jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "positive": int(row.get("positive") or 0),
-                        "negative": int(row.get("negative") or 0),
-                        "total": int(row.get("total") or 0),
-                    },
+        def load_stats():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT
+                          SUM(CASE WHEN sentiment = '积极' THEN 1 ELSE 0 END) AS positive,
+                          SUM(CASE WHEN sentiment = '消极' THEN 1 ELSE 0 END) AS negative,
+                          COUNT(*) AS total
+                        FROM user_feedbacks
+                        """
+                    )
+                    row = cursor.fetchone() or {}
+                return {
+                    "positive": int(row.get("positive") or 0),
+                    "negative": int(row.get("negative") or 0),
+                    "total": int(row.get("total") or 0),
                 }
-            )
-        finally:
-            conn.close()
+            finally:
+                conn.close()
+
+        return cached_response(cache_key("feedbacks", "stats"), app.config["CACHE_SHORT_TTL"], load_stats)
 
     @route("/api/feedbacks/negative-top5", methods=["GET"])
     def negative_feedback_top5():
@@ -464,23 +506,25 @@ def register_routes(app):
         if error_response:
             return error_response
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT problem_category, COUNT(*) AS count
-                    FROM user_feedbacks
-                    WHERE sentiment = '消极'
-                    GROUP BY problem_category
-                    ORDER BY count DESC, problem_category ASC
-                    LIMIT 5
-                    """
-                )
-                rows = cursor.fetchall()
-            return jsonify({"success": True, "data": json_ready(rows)})
-        finally:
-            conn.close()
+        def load_top5():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT problem_category, COUNT(*) AS count
+                        FROM user_feedbacks
+                        WHERE sentiment = '消极'
+                        GROUP BY problem_category
+                        ORDER BY count DESC, problem_category ASC
+                        LIMIT 5
+                        """
+                    )
+                    return cursor.fetchall()
+            finally:
+                conn.close()
+
+        return cached_response(cache_key("feedbacks", "negative-top5"), app.config["CACHE_SHORT_TTL"], load_top5)
 
     @route("/api/users", methods=["GET"])
     def list_users():
@@ -488,25 +532,23 @@ def register_routes(app):
         if error_response:
             return error_response
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT openid, nickname, email, avatar_key, user_type, created_at, updated_at
-                    FROM user_profiles
-                    ORDER BY updated_at DESC, created_at DESC
-                    """
-                )
-                rows = cursor.fetchall()
-            return jsonify(
-                {
-                    "success": True,
-                    "data": [format_profile(row) for row in rows],
-                }
-            )
-        finally:
-            conn.close()
+        def load_users():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT openid, nickname, email, avatar_key, user_type
+                        FROM user_profiles
+                        ORDER BY updated_at DESC, created_at DESC
+                        """
+                    )
+                    rows = cursor.fetchall()
+                return [format_profile(row) for row in rows]
+            finally:
+                conn.close()
+
+        return cached_response(cache_key("users", "list"), app.config["CACHE_DEFAULT_TTL"], load_users)
 
     @route("/api/users/<openid>/user-type", methods=["PUT"])
     def update_user_type(openid):
@@ -530,6 +572,7 @@ def register_routes(app):
         finally:
             conn.close()
 
+        invalidate_cache(f"profile:{parse.quote(openid, safe='')}", "users:*")
         return jsonify({"success": True, "data": format_profile(get_user_by_openid(openid))})
 
     @route("/api/add_recycle", methods=["POST"])
@@ -565,6 +608,7 @@ def register_routes(app):
                     (user["openid"], unit, contact, date, location, weight, herbs_str, type_),
                 )
             conn.commit()
+            invalidate_cache("recycles:*", "recycle_detail:*", "recycle_summary:*", "recycle_by_unit:*")
             return jsonify({"success": True})
         except Exception:
             conn.rollback()
@@ -579,36 +623,40 @@ def register_routes(app):
             return error_response
 
         type_filter = request.args.get("type")
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                sql = """
-                    SELECT id, unit AS name, contact, date, location AS address, state AS status, type
-                    FROM recycle_records
-                """
-                params = []
-                where_clauses = []
-                if user["user_type"] != "管理员":
-                    where_clauses.append("user_openid = %s")
-                    params.append(user["openid"])
-                if type_filter in ["company", "person"]:
-                    where_clauses.append("type = %s")
-                    params.append(type_filter)
-                if where_clauses:
-                    sql += " WHERE " + " AND ".join(where_clauses)
-                sql += " ORDER BY created_at DESC"
-                cursor.execute(sql, params)
-                records = cursor.fetchall()
+        key = cache_key("recycles", user["user_type"], user["openid"], type_filter or "all")
 
-            for record in records:
-                if record["status"] == "pending":
-                    record["status"] = "待处理"
-                elif record["status"] == "finish":
-                    record["status"] = "已回收"
+        def load_recycles():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    sql = """
+                        SELECT id, unit AS name, contact, date, location AS address, state AS status, type
+                        FROM recycle_records
+                    """
+                    params = []
+                    where_clauses = []
+                    if user["user_type"] != "管理员":
+                        where_clauses.append("user_openid = %s")
+                        params.append(user["openid"])
+                    if type_filter in ["company", "person"]:
+                        where_clauses.append("type = %s")
+                        params.append(type_filter)
+                    if where_clauses:
+                        sql += " WHERE " + " AND ".join(where_clauses)
+                    sql += " ORDER BY created_at DESC"
+                    cursor.execute(sql, params)
+                    records = cursor.fetchall()
 
-            return jsonify({"success": True, "data": json_ready(records)})
-        finally:
-            conn.close()
+                for record in records:
+                    if record["status"] == "pending":
+                        record["status"] = "待处理"
+                    elif record["status"] == "finish":
+                        record["status"] = "已回收"
+                return records
+            finally:
+                conn.close()
+
+        return cached_response(key, app.config["CACHE_DEFAULT_TTL"], load_recycles)
 
     @route("/api/get_recycle", methods=["GET"])
     def get_recycle():
@@ -617,13 +665,20 @@ def register_routes(app):
             return error_response
 
         recycle_id = request.args.get("id")
+        key = cache_key("recycle_detail", recycle_id, user["openid"], user["user_type"])
+        cached = get_json(app.config, key)
+        if cached is not None:
+            return jsonify({"success": True, "data": cached})
+
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT * FROM recycle_records WHERE id = %s", (recycle_id,))
                 row = cursor.fetchone()
             if row and can_access_recycle(user, row):
-                return jsonify({"success": True, "data": json_ready(row)})
+                data = json_ready(row)
+                set_json(app.config, key, data, app.config["CACHE_DEFAULT_TTL"])
+                return jsonify({"success": True, "data": data})
             if row:
                 return jsonify({"success": False, "msg": "无权限"}), 403
             return jsonify({"success": False, "msg": "未找到记录"}), 404
@@ -681,6 +736,7 @@ def register_routes(app):
                         (new_state, recycle_id),
                     )
             conn.commit()
+            invalidate_cache("recycles:*", "recycle_detail:*", "recycle_summary:*", "recycle_by_unit:*")
             return jsonify({"success": True})
         except Exception:
             conn.rollback()
@@ -695,39 +751,39 @@ def register_routes(app):
             return error_response
 
         type_filter = request.args.get("type")
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                sql = """
-                    SELECT
-                        unit AS name,
-                        location AS address,
-                        SUM(COALESCE(approved_weight, weight)) AS total_weight,
-                        type
-                    FROM recycle_records
-                    WHERE state = 'finish'
-                """
-                params = []
-                if type_filter in ["company", "person"]:
-                    sql += " AND type = %s"
-                    params.append(type_filter)
-                sql += " GROUP BY unit, location, type ORDER BY unit ASC, location ASC"
-                cursor.execute(sql, params)
-                rows = cursor.fetchall()
-            return jsonify(
-                {
-                    "success": True,
-                    "data": [
-                        {
-                            **json_ready(row),
-                            "entity_key": f"{row['name']}::{row['address']}",
-                        }
-                        for row in rows
-                    ],
-                }
-            )
-        finally:
-            conn.close()
+        key = cache_key("recycle_summary", type_filter or "all")
+
+        def load_summary():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    sql = """
+                        SELECT
+                            unit AS name,
+                            location AS address,
+                            SUM(COALESCE(approved_weight, weight)) AS total_weight,
+                            type
+                        FROM recycle_records
+                        WHERE state = 'finish'
+                    """
+                    params = []
+                    if type_filter in ["company", "person"]:
+                        sql += " AND type = %s"
+                        params.append(type_filter)
+                    sql += " GROUP BY unit, location, type ORDER BY unit ASC, location ASC"
+                    cursor.execute(sql, params)
+                    rows = cursor.fetchall()
+                return [
+                    {
+                        **json_ready(row),
+                        "entity_key": f"{row['name']}::{row['address']}",
+                    }
+                    for row in rows
+                ]
+            finally:
+                conn.close()
+
+        return cached_response(key, app.config["CACHE_LONG_TTL"], load_summary)
 
     @route("/api/recycle_by_unit", methods=["GET"])
     def recycle_by_unit():
@@ -741,72 +797,75 @@ def register_routes(app):
         if not unit or not location:
             return jsonify({"success": False, "msg": "缺少名称或地址"}), 400
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT DATE(date) AS date, SUM(COALESCE(approved_weight, weight)) AS total_weight
-                    FROM recycle_records
-                    WHERE state = 'finish' AND unit = %s AND location = %s
-                    GROUP BY DATE(date)
-                    ORDER BY date ASC
-                    """,
-                    (unit, location),
-                )
-                records = cursor.fetchall()
+        key = cache_key("recycle_by_unit", unit, location)
 
-                cursor.execute(
-                    """
-                    SELECT unit AS name, location, SUM(COALESCE(approved_weight, weight)) AS total
-                    FROM recycle_records
-                    WHERE state = 'finish' AND unit = %s AND location = %s
-                    GROUP BY unit, location
-                    """,
-                    (unit, location),
-                )
-                meta = cursor.fetchone() or {"name": unit, "location": location, "total": 0}
+        def load_by_unit():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT DATE(date) AS date, SUM(COALESCE(approved_weight, weight)) AS total_weight
+                        FROM recycle_records
+                        WHERE state = 'finish' AND unit = %s AND location = %s
+                        GROUP BY DATE(date)
+                        ORDER BY date ASC
+                        """,
+                        (unit, location),
+                    )
+                    records = cursor.fetchall()
 
-            return jsonify(
-                {
-                    "success": True,
-                    "data": {
-                        "records": json_ready(records),
-                        "name": meta["name"],
-                        "location": meta["location"],
-                        "total": json_ready(meta["total"]),
-                        "entity_key": f"{meta['name']}::{meta['location']}",
-                    },
+                    cursor.execute(
+                        """
+                        SELECT unit AS name, location, SUM(COALESCE(approved_weight, weight)) AS total
+                        FROM recycle_records
+                        WHERE state = 'finish' AND unit = %s AND location = %s
+                        GROUP BY unit, location
+                        """,
+                        (unit, location),
+                    )
+                    meta = cursor.fetchone() or {"name": unit, "location": location, "total": 0}
+
+                return {
+                    "records": json_ready(records),
+                    "name": meta["name"],
+                    "location": meta["location"],
+                    "total": json_ready(meta["total"]),
+                    "entity_key": f"{meta['name']}::{meta['location']}",
                 }
-            )
-        finally:
-            conn.close()
+            finally:
+                conn.close()
+
+        return cached_response(key, app.config["CACHE_LONG_TTL"], load_by_unit)
 
     @route("/api/maoning_maosha/products", methods=["GET"])
     def list_maosha_products():
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM products ORDER BY id DESC")
-                rows = cursor.fetchall()
+        def load_products():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT * FROM products ORDER BY id DESC")
+                    rows = cursor.fetchall()
 
-            data = []
-            for row in rows:
-                data.append(
-                    {
-                        "id": row["id"],
-                        "spec": row["spec"],
-                        "price": row["price"],
-                        "location": row["location"],
-                        "phone": row["phone"],
-                        "image": asset_path("maosha", row["image_key"]),
-                        "erweiimage": asset_path("maosha", row["erweiimage_key"]),
-                        "ywymimage": asset_path("maosha", row["ywymimage_key"]),
-                    }
-                )
-            return jsonify(data)
-        finally:
-            conn.close()
+                data = []
+                for row in rows:
+                    data.append(
+                        {
+                            "id": row["id"],
+                            "spec": row["spec"],
+                            "price": row["price"],
+                            "location": row["location"],
+                            "phone": row["phone"],
+                            "image": asset_path("maosha", row["image_key"]),
+                            "erweiimage": asset_path("maosha", row["erweiimage_key"]),
+                            "ywymimage": asset_path("maosha", row["ywymimage_key"]),
+                        }
+                    )
+                return data
+            finally:
+                conn.close()
+
+        return cached_response(cache_key("maosha_products"), app.config["CACHE_LONG_TTL"], load_products, success_wrapper=False)
 
     @route("/api/maoning_maosha/upload", methods=["POST"])
     def upload_maosha():
@@ -856,6 +915,7 @@ def register_routes(app):
                         (upload_image(app.config, bucket_map["maosha"], ywymimage), upload_id),
                     )
             conn.commit()
+            invalidate_cache("maosha_products")
             return jsonify({"msg": "success", "uploadId": upload_id})
         except Exception:
             conn.rollback()
@@ -869,19 +929,21 @@ def register_routes(app):
         if error_response:
             return error_response
 
-        conn = get_connection(app.config, dict_cursor=True)
-        try:
-            with conn.cursor() as cursor:
-                if user["user_type"] == "管理员":
-                    cursor.execute("SELECT * FROM maosha_shiyong ORDER BY id DESC")
-                else:
-                    cursor.execute(
-                        "SELECT * FROM maosha_shiyong WHERE user_openid = %s ORDER BY id DESC",
-                        (user["openid"],),
-                    )
-                rows = cursor.fetchall()
-            return jsonify(
-                [
+        key = cache_key("maoshashiyong_products", user["user_type"], user["openid"])
+
+        def load_trial_products():
+            conn = get_connection(app.config, dict_cursor=True)
+            try:
+                with conn.cursor() as cursor:
+                    if user["user_type"] == "管理员":
+                        cursor.execute("SELECT * FROM maosha_shiyong ORDER BY id DESC")
+                    else:
+                        cursor.execute(
+                            "SELECT * FROM maosha_shiyong WHERE user_openid = %s ORDER BY id DESC",
+                            (user["openid"],),
+                        )
+                    rows = cursor.fetchall()
+                return [
                     {
                         "id": row["id"],
                         "image": asset_path("maoshashiyong", row["image_key"]),
@@ -891,9 +953,10 @@ def register_routes(app):
                     }
                     for row in rows
                 ]
-            )
-        finally:
-            conn.close()
+            finally:
+                conn.close()
+
+        return cached_response(key, app.config["CACHE_DEFAULT_TTL"], load_trial_products, success_wrapper=False)
 
     @route("/api/maoning_maoshashiyong/upload", methods=["POST"])
     def upload_maoshashiyong():
@@ -919,6 +982,7 @@ def register_routes(app):
                     (user["openid"], upload_image(app.config, bucket_map["maoshashiyong"], image), name, phone),
                 )
             conn.commit()
+            invalidate_cache("maoshashiyong_products:*")
             return jsonify({"msg": "success"})
         except Exception:
             conn.rollback()
@@ -933,6 +997,11 @@ def register_routes(app):
             return error_response
 
         product_id = request.args.get("id")
+        key = cache_key("maoshashiyong_product", product_id, user["openid"], user["user_type"])
+        cached = get_json(app.config, key)
+        if cached is not None:
+            return jsonify(cached)
+
         conn = get_connection(app.config, dict_cursor=True)
         try:
             with conn.cursor() as cursor:
@@ -942,15 +1011,15 @@ def register_routes(app):
                 return jsonify({"success": False, "msg": "未找到记录"}), 404
             if not can_access_trial(user, row):
                 return jsonify({"success": False, "msg": "无权限"}), 403
-            return jsonify(
-                {
-                    "id": row["id"],
-                    "image": asset_path("maoshashiyong", row["image_key"]),
-                    "name": row["name"],
-                    "phone": row["phone"],
-                    "status": row["status"],
-                }
-            )
+            data = {
+                "id": row["id"],
+                "image": asset_path("maoshashiyong", row["image_key"]),
+                "name": row["name"],
+                "phone": row["phone"],
+                "status": row["status"],
+            }
+            set_json(app.config, key, data, app.config["CACHE_DEFAULT_TTL"])
+            return jsonify(data)
         finally:
             conn.close()
 
@@ -977,6 +1046,7 @@ def register_routes(app):
                 affected = cursor.rowcount
             conn.commit()
             if affected > 0:
+                invalidate_cache("maoshashiyong_products:*", "maoshashiyong_product:*")
                 return jsonify({"success": True, "msg": "更新成功"})
             return jsonify({"success": False, "msg": "更新失败或未找到记录"}), 404
         except Exception:

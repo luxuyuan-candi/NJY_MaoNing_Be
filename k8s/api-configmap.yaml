@@ -15,3 +15,9 @@ data:
   WECHAT_APP_ID: wx4e2c5e940b617eee
   DEEPSEEK_API_BASE: https://api.deepseek.com
   DEEPSEEK_MODEL: deepseek-chat
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  CACHE_SHORT_TTL: "30"
+  CACHE_DEFAULT_TTL: "60"
+  CACHE_LONG_TTL: "120"

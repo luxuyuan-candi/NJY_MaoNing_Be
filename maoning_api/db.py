@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from decimal import Decimal
 
 import pymysql
@@ -83,6 +84,8 @@ def get_connection(config, dict_cursor=False):
 def json_ready(value):
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
     if isinstance(value, list):
         return [json_ready(item) for item in value]
     if isinstance(value, dict):

@@ -4,3 +4,4 @@ PyMySQL==1.1.1
 boto3==1.39.9
 gunicorn==23.0.0
 cryptography==44.0.2
+redis==5.2.1
