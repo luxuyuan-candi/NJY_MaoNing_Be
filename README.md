@@ -14,6 +14,7 @@ gunicorn --bind 0.0.0.0:5000 app:app
 ## K8s 资源
 
 - `k8s/namespace.yaml` 创建 `maoning` 命名空间
+- `k8s/secret.example.yaml` 是 Secret 模板，不包含真实密码；真实 Secret 只在集群内创建
 - `k8s/mysql*.yaml` 部署 MySQL 并初始化表结构
 - `k8s/minio.yaml` 部署 MinIO 对象存储
 - `k8s/redis.yaml` 部署 Redis 缓存服务
@@ -26,6 +27,18 @@ gunicorn --bind 0.0.0.0:5000 app:app
 
 - `alpine/git` 作为 initContainer 拉取当前 GitHub 仓库代码
 - `python:3.11-slim` 作为运行容器安装依赖并启动 Flask/Gunicorn
+
+## Secret 管理
+
+仓库不保存真实密码或 API Key。部署前需要在集群中创建 `maoning-secret`，包含以下键：
+
+- `MYSQL_ROOT_PASSWORD`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `WECHAT_APP_SECRET`
+- `DEEPSEEK_API_KEY`
+
+不要直接应用 `k8s/secret.example.yaml` 到生产集群；它只用于说明字段结构。可以使用 `kubectl create secret generic maoning-secret -n maoning ...` 在集群中创建真实 Secret。
 
 ## Redis 缓存
 
