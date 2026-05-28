@@ -118,13 +118,6 @@ spec:
                 name: maoning-maoshashiyong-server
                 port:
                   number: 5000
-          - path: /maoning
-            pathType: Prefix
-            backend:
-              service:
-                name: maoning-api-proxy
-                port:
-                  number: 5000
           - path: /api/yangsheng/yangshengshiping
             pathType: Prefix
             backend:

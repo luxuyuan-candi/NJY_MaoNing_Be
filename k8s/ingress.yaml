@@ -5,10 +5,15 @@ metadata:
   namespace: maoning
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - www.njwjxy.cn
+      secretName: ingress-tls
   rules:
-    - http:
+    - host: www.njwjxy.cn
+      http:
         paths:
-          - path: /
+          - path: /maoning
             pathType: Prefix
             backend:
               service:
