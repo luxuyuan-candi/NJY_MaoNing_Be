@@ -21,7 +21,6 @@ gunicorn --bind 0.0.0.0:5000 app:app
 - `k8s/ingress.yaml` 在 `maoning` namespace 中直接通过 `www.njwjxy.cn/maoning` 暴露 API
 - `k8s/minio-public-ingress.yaml` 在 `maoning` namespace 中直接通过 `www.njwjxy.cn/maoning-public-assets` 暴露 MinIO 公共资源
 - `k8s/persistent-volumes.yaml` 为 `local-storage` 集群补齐 Maoning 所需 PV
-- `k8s/default-backend-server-ingress.yaml` 仅保留原有老系统路由，不再转发 Maoning 新服务
 
 `k8s/api.yaml` 现改为只使用开源镜像：
 
