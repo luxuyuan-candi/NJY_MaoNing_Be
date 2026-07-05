@@ -14,7 +14,7 @@ data:
   MINIO_BUCKET_PUBLIC: public-assets
   WECHAT_APP_ID: wx4e2c5e940b617eee
   DEEPSEEK_API_BASE: https://api.deepseek.com
-  DEEPSEEK_MODEL: deepseek-chat
+  DEEPSEEK_MODEL: deepseek-v4-flash
   REDIS_HOST: redis
   REDIS_PORT: "6379"
   REDIS_DB: "0"
